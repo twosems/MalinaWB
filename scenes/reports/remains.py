@@ -1,49 +1,27 @@
-from telegram import InlineKeyboardMarkup, InlineKeyboardButton, Update
+from telegram import Update
 from telegram.ext import ContextTypes
 from user_storage import get_api
 from wb_api import get_stocks
+from utils import paginated_keyboard
 
-def remains_keyboard(page, total_pages):
-    buttons = []
-    nav_buttons = []
-    if page > 0:
-        nav_buttons.append(InlineKeyboardButton("⬅️ Назад", callback_data=f"remains_page_{page-1}"))
-    if page < total_pages - 1:
-        nav_buttons.append(InlineKeyboardButton("Вперёд ➡️", callback_data=f"remains_page_{page+1}"))
-    if nav_buttons:
-        buttons.append(nav_buttons)
-    buttons.append([InlineKeyboardButton("🔙 В меню", callback_data="reports_menu")])
-    return InlineKeyboardMarkup(buttons)
-
-async def remains_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def remains_report(update: Update, context: ContextTypes.DEFAULT_TYPE, page: int = 0):
     user_id = update.effective_user.id
     api_key = get_api(user_id)
-    print(f"[remains_menu] Отправляем API-ключ: >{api_key}<")  # Для отладки
-
-    # Определяем номер страницы из callback_data или берем 0 по умолчанию
-    page = 0
-    if update.callback_query and update.callback_query.data:
-        data = update.callback_query.data
-        if data.startswith("remains_page_"):
-            try:
-                page = int(data.split("_")[-1])
-            except ValueError:
-                page = 0
 
     if not api_key:
         await update.callback_query.edit_message_text(
             "❗ Для просмотра остатков необходимо ввести API-ключ.",
-            reply_markup=remains_keyboard(0, 1),
+            reply_markup=paginated_keyboard("remains", 0, 1),
             parse_mode="HTML"
         )
         return
 
     try:
         items = await get_stocks(api_key)
-    except Exception as e:
+    except Exception:
         await update.callback_query.edit_message_text(
             "❗ Не удалось получить остатки, попробуйте позже.",
-            reply_markup=remains_keyboard(0, 1),
+            reply_markup=paginated_keyboard("remains", 0, 1),
             parse_mode="HTML"
         )
         return
@@ -51,11 +29,12 @@ async def remains_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not items:
         await update.callback_query.edit_message_text(
             "❗ Остатков не найдено.",
-            reply_markup=remains_keyboard(0, 1),
+            reply_markup=paginated_keyboard("remains", 0, 1),
             parse_mode="HTML"
         )
         return
 
+    # Группируем товары по складам
     warehouse_data = {}
     for item in items:
         qty = item.get("quantity", 0)
@@ -68,19 +47,9 @@ async def remains_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             warehouse_data[wh] = []
         warehouse_data[wh].append((art, name, qty))
 
-    if not warehouse_data:
-        await update.callback_query.edit_message_text(
-            "❗ Все склады пусты!",
-            reply_markup=remains_keyboard(0, 1),
-            parse_mode="HTML"
-        )
-        return
-
     warehouses = list(warehouse_data.items())
     batch_size = 10
-    total_pages = (len(warehouses) + batch_size - 1) // batch_size
-
-    # Границы текущей страницы
+    total_pages = max(1, (len(warehouses) + batch_size - 1) // batch_size)
     start = page * batch_size
     end = start + batch_size
     batch = warehouses[start:end]
@@ -92,9 +61,8 @@ async def remains_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text += f"  • <b>{art}</b> ({name}): <b>{qty}</b> шт\n"
         text += "\n"
 
-    # Обновляем только текст и клавиатуру (edit_message_text)
     await update.callback_query.edit_message_text(
         text.strip() if text.strip() else "❗ Нет остатков для отображения.",
         parse_mode="HTML",
-        reply_markup=remains_keyboard(page, total_pages)
+        reply_markup=paginated_keyboard("remains", page, total_pages)
     )
