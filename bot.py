@@ -42,6 +42,8 @@ async def callback_router(update, context):
     elif data == "api_remove":
         del_api(user_id)
         await account_menu(update, context)
+    elif data == "api_change":
+        await api_entry_start(update, context)
     elif data == "reports_menu":
         await reports_menu(update, context)
     elif data == "remains_menu":

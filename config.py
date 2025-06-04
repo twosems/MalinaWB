@@ -1,2 +1,9 @@
-TELEGRAM_TOKEN = "7971708913:AAG6QBNsT2_iYPbewXBd7YQ99IsiZ6pcclU"
-LANDING_URL = "https://example.com"
+"""Configuration for the Telegram bot."""
+
+import os
+
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+if not TELEGRAM_TOKEN:
+    raise RuntimeError("TELEGRAM_TOKEN environment variable not set")
+
+LANDING_URL = os.getenv("LANDING_URL", "https://example.com")
