@@ -46,6 +46,8 @@ async def callback_router(update, context):
         await reports_menu(update, context)
     elif data == "remains_menu":
         await remains_menu(update, context)
+    elif data.startswith("remains_page_"):
+        await remains_menu(update, context)
     elif data == "sales_menu":
         await sales_menu(update, context)
     elif data == "ads_menu":
