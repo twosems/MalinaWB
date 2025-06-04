@@ -14,6 +14,10 @@ from scenes.reports.storage import storage_menu
 from scenes.reports.profit import profit_menu
 from user_storage import days_left, get_api, del_api, is_trial_active
 import config
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 async def callback_router(update, context):
     data = update.callback_query.data
@@ -73,7 +77,7 @@ def main():
     # 3. Потом общий CallbackQueryHandler для всех кнопок
     app.add_handler(CallbackQueryHandler(callback_router))
 
-    print("Бот запущен!")
+    logger.info("Бот запущен!")
     app.run_polling()
 
 if __name__ == "__main__":

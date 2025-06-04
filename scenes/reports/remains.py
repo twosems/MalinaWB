@@ -2,6 +2,9 @@ from telegram import InlineKeyboardMarkup, InlineKeyboardButton, Update
 from telegram.ext import ContextTypes
 from user_storage import get_api
 from wb_api import get_stocks
+import logging
+
+logger = logging.getLogger(__name__)
 
 def remains_keyboard(page, total_pages):
     buttons = []
@@ -18,7 +21,7 @@ def remains_keyboard(page, total_pages):
 async def remains_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     api_key = get_api(user_id)
-    print(f"[remains_menu] Отправляем API-ключ: >{api_key}<")  # Для отладки
+    logger.debug("[remains_menu] API key received and passed to request")
 
     # Определяем номер страницы из callback_data или берем 0 по умолчанию
     page = 0
