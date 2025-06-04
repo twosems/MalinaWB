@@ -16,6 +16,7 @@ def remains_keyboard(page, total_pages):
     return InlineKeyboardMarkup(buttons)
 
 async def remains_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.callback_query.answer()
     user_id = update.effective_user.id
     api_key = get_api(user_id)
     print(f"[remains_menu] Отправляем API-ключ: >{api_key}<")  # Для отладки
