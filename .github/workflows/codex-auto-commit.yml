@@ -1,0 +1,31 @@
+name: Codex Auto Commit
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  codex-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Git
+        run: |
+          git config user.name "Codex Bot"
+          git config user.email "codex-bot@example.com"
+
+      - name: Make changes
+        run: |
+          # Здесь добавь команды, которые вносят изменения в репозиторий
+          echo "Автоматическое обновление от Codex" >> codex_update.txt
+
+      - name: Commit and push changes
+        env:
+          GITHUB_TOKEN: ${{ secrets.CODEX_TOKEN }}
+        run: |
+          git add .
+          git commit -m "Codex: автоматическое обновление"
+          git push origin main
