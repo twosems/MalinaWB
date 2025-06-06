@@ -12,7 +12,7 @@ def account_keyboard(api_set, balance, trial_active):
         if api_set:
             kb.append([
                 InlineKeyboardButton("📊 Отчёты", callback_data="reports_menu"),
-                InlineKeyboardButton("✏️ Изменить API-ключ", callback_data="api_change"),
+                InlineKeyboardButton("✏️ Изменить API-ключ", callback_data="api_entry"),
                 InlineKeyboardButton("❌ Удалить API", callback_data="api_remove"),
             ])
         else:
