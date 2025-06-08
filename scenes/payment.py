@@ -2,9 +2,10 @@ from telegram import InlineKeyboardMarkup, InlineKeyboardButton, Update
 from telegram.ext import ContextTypes
 from user_storage import is_trial_active, set_trial, trial_left_minutes, get_user
 from utils import safe_edit_message_text
+from db import create_user  # <--- добавили импорт
 
 def payment_keyboard(user_id):
-    user = get_user(user_id)
+    user = get_user(user_id) or {}  # <--- теперь всегда dict
     kb = [[InlineKeyboardButton("💳 Оплатить", callback_data="pay_invoice")]]
     if not user.get("trial_used"):
         kb.append([InlineKeyboardButton("💡 Попробовать бесплатно (1 час)", callback_data="trial_activate")])
@@ -13,6 +14,8 @@ def payment_keyboard(user_id):
 
 async def payment_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    username = update.effective_user.username or ""
+    create_user(user_id, username)  # <--- Гарантия, что пользователь будет создан
     trial_active = is_trial_active(user_id)
     msg = (
         "🔒 <b>Доступ к функциям бота платный.</b>\n"
@@ -33,6 +36,8 @@ from scenes.account import account_menu
 
 async def payment_trial_activate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    username = update.effective_user.username or ""
+    create_user(user_id, username)  # <--- На всякий случай!
     set_trial(user_id)
     await update.callback_query.answer("Пробный доступ на 1 час активирован!")
     await account_menu(update, context)

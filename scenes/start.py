@@ -1,5 +1,6 @@
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton, Update
 from telegram.ext import ContextTypes
+from db import create_user   # <-- добавили импорт
 
 START_DESCRIPTION = (
     "🤖 <b>Добро пожаловать!</b>\n\n"
@@ -16,6 +17,12 @@ def start_keyboard():
     ])
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # --- создание пользователя в БД ---
+    user_id = update.effective_user.id
+    username = update.effective_user.username or ""
+    create_user(user_id, username)
+    # --- конец добавления ---
+
     # Всегда показываем стартовую страницу — даже если есть подписка или trial
     if update.message:
         await update.message.reply_text(

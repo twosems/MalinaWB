@@ -3,6 +3,7 @@ from telegram.ext import ContextTypes
 from user_storage import days_left, get_user, get_api, is_trial_active, trial_left_minutes
 from scenes.payment import payment_menu
 from utils import safe_edit_message_text
+from db import create_user   # <--- добавлено
 
 def account_keyboard(api_set, balance, trial_active):
     kb = []
@@ -22,9 +23,12 @@ def account_keyboard(api_set, balance, trial_active):
 
 async def account_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    user = get_user(user_id)
+    username = update.effective_user.username or ""
+    create_user(user_id, username)  # <-- создаём пользователя в БД, если его нет
+
+    user = get_user(user_id) or {}  # <-- безопасное получение данных пользователя
     balance = days_left(user_id)
-    api = user.get("api")
+    api = user.get("api_key")
     api_set = bool(api)
     trial_active = is_trial_active(user_id)
 
