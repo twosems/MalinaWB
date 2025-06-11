@@ -106,7 +106,7 @@ def main():
     app.add_handler(CallbackQueryHandler(admin_callback, pattern=r"^(admin_users|select_user:.*|ban:.*|unban:.*|add30:.*|main_menu)$"))
 
     # 4. CallbackQueryHandler для sales (отчёты по продажам)
-    app.add_handler(CallbackQueryHandler(sales_callback, pattern=r"^(sales_menu|sales_main|sales_all|sales_articles|sales_articles_positive|sales_articles_all|sales_articles_page:.*|sales_article_select:.*|sales_period_.*|sales_date_select:.*|report:sales:.*)$"))
+    app.add_handler(CallbackQueryHandler(sales_callback, pattern=r"^(sales_.*|report:sales:.*)$"))
 
     # 5. CallbackQueryHandler для календаря sales (в правильном порядке — СНАЧАЛА специальные)
     app.add_handler(CallbackQueryHandler(calendar_sales_day_callback, pattern=r"^calendar_sales_day.*"))
