@@ -2,7 +2,7 @@ import asyncio
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton, Update
 from telegram.ext import ContextTypes
 from user_storage import get_api
-from wb_api import get_sales  # Предполагается, что в wb_api есть функция get_sales
+from wb_api import get_sales, get_stocks  # Предполагается, что в wb_api есть функция get_sales
 from utils import paginate, paginated_keyboard, page_info_str, safe_edit_message_text
 
 REPORT_KEY = "sales"
