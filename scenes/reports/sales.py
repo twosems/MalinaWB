@@ -261,3 +261,38 @@ async def calendar_sales_period_end_callback(update, context):
         # Можно реализовать отчёт по периоду
         await show_sales_all(update, context, start)  # Используй период start-end
     await calendar_callback(update, context, action_prefix="calendar_sales_period_end", on_date_selected=on_date_selected)
+
+async def calendar_article_day_callback(update, context):
+    data = update.callback_query.data
+    prefix = data.split(":")[0]
+    art = prefix[len("calendar_article_day_"):]
+
+    async def on_date_selected(update, context, selected_date):
+        date_from = selected_date.strftime("%Y-%m-%d")
+        await show_sales_article(update, context, art, date_from)
+
+    await calendar_callback(update, context, action_prefix=prefix, on_date_selected=on_date_selected)
+
+async def calendar_article_period_start_callback(update, context):
+    data = update.callback_query.data
+    prefix = data.split(":")[0]
+    art = prefix[len("calendar_article_period_start_"):]
+
+    async def on_date_selected(update, context, selected_date):
+        context.user_data["period_start"] = selected_date.strftime("%Y-%m-%d")
+        await calendar_menu(update, context, action_prefix=f"calendar_article_period_end_{art}", title="Выберите конечную дату периода:")
+
+    await calendar_callback(update, context, action_prefix=prefix, on_date_selected=on_date_selected)
+
+async def calendar_article_period_end_callback(update, context):
+    data = update.callback_query.data
+    prefix = data.split(":")[0]
+    art = prefix[len("calendar_article_period_end_"):]
+
+    async def on_date_selected(update, context, selected_date):
+        start = context.user_data.get("period_start")
+        end = selected_date.strftime("%Y-%m-%d")
+        # Можно реализовать отчёт по периоду
+        await show_sales_article(update, context, art, start)  # Используй период start-end
+
+    await calendar_callback(update, context, action_prefix=prefix, on_date_selected=on_date_selected)
