@@ -2,7 +2,11 @@ import asyncio
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton, Update
 from telegram.ext import ContextTypes
 from user_storage import get_api
-from wb_api import get_sales  # Предполагается, что в wb_api есть функция get_sales
+from wb_api import (
+    get_sales,
+    get_finance_report_data,
+    get_stocks,
+)
 from utils import paginate, paginated_keyboard, page_info_str, safe_edit_message_text
 
 REPORT_KEY = "sales"
@@ -199,12 +203,102 @@ async def show_date_selection(query, article):
 
 # --- Генерация отчёта по всем товарам ---
 async def generate_sales_report_all(query, api_key, period):
-    # TODO: Реализуй логику получения данных по всем товарам и периодам
-    await query.answer(f"Генерация отчёта по всем товарам за период: {period}")
-    await query.edit_message_text(f"Здесь будет отчёт по всем товарам за период: <b>{period}</b>", parse_mode="HTML")
+    """Сформировать отчёт по продажам за выбранный период."""
+    await safe_edit_message_text(query, "⏳ Получаем данные...")
+
+    from datetime import date, timedelta
+
+    today = date.today()
+    if period.endswith("month"):
+        date_from = today.replace(day=1).isoformat()
+        date_to = today.isoformat()
+    elif period.endswith("day"):
+        date_from = today.isoformat()
+        date_to = today.isoformat()
+    else:
+        date_from = (today - timedelta(days=7)).isoformat()
+        date_to = today.isoformat()
+
+    try:
+        rows = await get_finance_report_data(api_key, date_from, date_to)
+    except Exception:
+        await query.edit_message_text(
+            "❗ Ошибка при получении данных отчёта.", parse_mode="HTML"
+        )
+        return
+
+    if not rows:
+        await query.edit_message_text(
+            "Нет продаж за указанный период.", parse_mode="HTML"
+        )
+        return
+
+    total_qty = sum(r.get("quantity", 0) for r in rows)
+    revenue = sum(
+        r.get("for_pay")
+        or r.get("forPay")
+        or r.get("retail_amount")
+        or r.get("totalPrice")
+        or r.get("ppvz_for_pay")
+        or 0
+        for r in rows
+    )
+
+    text = (
+        f"📦 <b>Продажи всех товаров</b>\n"
+        f"Период: <b>{date_from}</b> - <b>{date_to}</b>\n"
+        f"Количество: <b>{total_qty}</b> шт\n"
+        f"Сумма: <b>{revenue:.2f}</b> руб."
+    )
+    await query.edit_message_text(text, parse_mode="HTML")
 
 # --- Генерация отчёта по артикулу и дате ---
 async def generate_sales_report_article(query, api_key, article, date):
-    # TODO: Реализуй логику получения данных по артикулу и дате
-    await query.answer(f"Генерация отчёта по артикулу {article} за период: {date}")
-    await query.edit_message_text(f"Здесь будет отчёт по артикулу <b>{article}</b> за период: <b>{date}</b>", parse_mode="HTML")
+    """Сформировать отчёт по конкретному артикулу."""
+    await safe_edit_message_text(query, "⏳ Получаем данные...")
+
+    from datetime import date as dt_date, timedelta
+
+    today = dt_date.today()
+    if date == "month":
+        date_from = today.replace(day=1).isoformat()
+        date_to = today.isoformat()
+    elif date == "day":
+        date_from = today.isoformat()
+        date_to = today.isoformat()
+    else:
+        date_from = (today - timedelta(days=7)).isoformat()
+        date_to = today.isoformat()
+
+    try:
+        rows = await get_finance_report_data(api_key, date_from, date_to, article=article)
+    except Exception:
+        await query.edit_message_text(
+            "❗ Ошибка при получении данных отчёта.", parse_mode="HTML"
+        )
+        return
+
+    if not rows:
+        await query.edit_message_text(
+            "Нет продаж за указанный период.", parse_mode="HTML"
+        )
+        return
+
+    total_qty = sum(r.get("quantity", 0) for r in rows)
+    revenue = sum(
+        r.get("for_pay")
+        or r.get("forPay")
+        or r.get("retail_amount")
+        or r.get("totalPrice")
+        or r.get("ppvz_for_pay")
+        or 0
+        for r in rows
+    )
+
+    text = (
+        f"🔢 <b>Продажи артикула {article}</b>\n"
+        f"Период: <b>{date_from}</b> - <b>{date_to}</b>\n"
+        f"Количество: <b>{total_qty}</b> шт\n"
+        f"Сумма: <b>{revenue:.2f}</b> руб."
+    )
+    await query.edit_message_text(text, parse_mode="HTML")
