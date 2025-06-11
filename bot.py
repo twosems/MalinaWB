@@ -8,7 +8,7 @@ from scenes.account import account_menu
 from scenes.api_entry import api_entry_start, api_entry_finish, ENTER_API
 from scenes.reports.menu import reports_menu
 from scenes.reports.remains import remains_menu
-from scenes.reports.sales import sales_menu
+from scenes.reports.sales import sales_callback  # <-- Импорт изменён
 from scenes.reports.ads import ads_menu
 from scenes.reports.storage import storage_menu
 from scenes.reports.profit import profit_menu
@@ -62,8 +62,9 @@ async def callback_router(update, context):
         await reports_menu(update, context)
     elif data == "remains_menu" or data.startswith("report:remains:"):
         await remains_menu(update, context)
-    elif data == "sales_menu" or data.startswith("report:sales:"):
-        await sales_menu(update, context)
+    # Перенаправляем все sales_* колбеки в sales_callback
+    elif data.startswith("sales_") or data.startswith("report:sales:"):
+        await sales_callback(update, context)
     elif data == "ads_menu" or data.startswith("report:ads:"):
         await ads_menu(update, context)
     elif data == "storage_menu" or data.startswith("report:storage:"):
@@ -98,8 +99,11 @@ def main():
     # 3. CallbackQueryHandler для админских callback (с расширенным паттерном)
     app.add_handler(CallbackQueryHandler(admin_callback, pattern=r"^(admin_users|select_user:.*|ban:.*|unban:.*|add30:.*|main_menu)$"))
 
-    # 4. CallbackQueryHandler для остальных callback (обычные кнопки)
-    app.add_handler(CallbackQueryHandler(callback_router, pattern=r"^(start_btn|main_menu|pay_menu|pay_invoice|trial_activate|account_menu|api_remove|reports_menu|remains_menu|report:remains:.*|sales_menu|report:sales:.*|ads_menu|report:ads:.*|storage_menu|report:storage:.*|profit_menu|report:profit:.*)$"))
+    # 4. CallbackQueryHandler для sales (отчёты по продажам)
+    app.add_handler(CallbackQueryHandler(sales_callback, pattern=r"^(sales_all|sales_articles|sales_articles_positive|sales_articles_all|sales_articles_page:.*|sales_article_select:.*|sales_period_.*|sales_date_select:.*|report:sales:.*)$"))
+
+    # 5. CallbackQueryHandler для остальных callback (обычные кнопки)
+    app.add_handler(CallbackQueryHandler(callback_router, pattern=r"^(start_btn|main_menu|pay_menu|pay_invoice|trial_activate|account_menu|api_remove|reports_menu|remains_menu|report:remains:.*|ads_menu|report:ads:.*|storage_menu|report:storage:.*|profit_menu|report:profit:.*)$"))
 
     print("Бот запущен!")
     app.run_polling()
