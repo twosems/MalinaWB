@@ -12,7 +12,10 @@ from scenes.reports.sales import (
     sales_callback,
     calendar_sales_day_callback,
     calendar_sales_period_start_callback,
-    calendar_sales_period_end_callback
+    calendar_sales_period_end_callback,
+    calendar_article_day_callback,
+    calendar_article_period_start_callback,
+    calendar_article_period_end_callback
 )
 from scenes.reports.ads import ads_menu
 from scenes.reports.storage import storage_menu
@@ -112,6 +115,9 @@ def main():
     app.add_handler(CallbackQueryHandler(calendar_sales_day_callback, pattern=r"^calendar_sales_day.*"))
     app.add_handler(CallbackQueryHandler(calendar_sales_period_start_callback, pattern=r"^calendar_sales_period_start.*"))
     app.add_handler(CallbackQueryHandler(calendar_sales_period_end_callback, pattern=r"^calendar_sales_period_end.*"))
+    app.add_handler(CallbackQueryHandler(calendar_article_day_callback, pattern=r"^calendar_article_day_.*"))
+    app.add_handler(CallbackQueryHandler(calendar_article_period_start_callback, pattern=r"^calendar_article_period_start_.*"))
+    app.add_handler(CallbackQueryHandler(calendar_article_period_end_callback, pattern=r"^calendar_article_period_end_.*"))
 
     # 6. Общий calendar_callback (последним — на случай других сценариев)
     app.add_handler(CallbackQueryHandler(calendar_callback, pattern=r"^calendar.*"))
