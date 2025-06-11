@@ -8,11 +8,17 @@ from scenes.account import account_menu
 from scenes.api_entry import api_entry_start, api_entry_finish, ENTER_API
 from scenes.reports.menu import reports_menu
 from scenes.reports.remains import remains_menu
-from scenes.reports.sales import sales_callback  # <-- Импорт изменён
+from scenes.reports.sales import (
+    sales_callback,
+    calendar_sales_day_callback,
+    calendar_sales_period_start_callback,
+    calendar_sales_period_end_callback
+)
 from scenes.reports.ads import ads_menu
 from scenes.reports.storage import storage_menu
 from scenes.reports.profit import profit_menu
 from user_storage import days_left, get_api, del_api, is_trial_active, get_user
+from scenes.calendar import calendar_callback
 import config
 
 # Для работы с БД
@@ -62,7 +68,7 @@ async def callback_router(update, context):
         await reports_menu(update, context)
     elif data == "remains_menu" or data.startswith("report:remains:"):
         await remains_menu(update, context)
-    # Перенаправляем все sales_* колбеки в sales_callback
+    # sales_callback для всех sales_* и report:sales:
     elif data.startswith("sales_") or data.startswith("report:sales:"):
         await sales_callback(update, context)
     elif data == "ads_menu" or data.startswith("report:ads:"):
@@ -102,7 +108,15 @@ def main():
     # 4. CallbackQueryHandler для sales (отчёты по продажам)
     app.add_handler(CallbackQueryHandler(sales_callback, pattern=r"^(sales_menu|sales_main|sales_all|sales_articles|sales_articles_positive|sales_articles_all|sales_articles_page:.*|sales_article_select:.*|sales_period_.*|sales_date_select:.*|report:sales:.*)$"))
 
-    # 5. CallbackQueryHandler для остальных callback (обычные кнопки)
+    # 5. CallbackQueryHandler для календаря sales (в правильном порядке — СНАЧАЛА специальные)
+    app.add_handler(CallbackQueryHandler(calendar_sales_day_callback, pattern=r"^calendar_sales_day.*"))
+    app.add_handler(CallbackQueryHandler(calendar_sales_period_start_callback, pattern=r"^calendar_sales_period_start.*"))
+    app.add_handler(CallbackQueryHandler(calendar_sales_period_end_callback, pattern=r"^calendar_sales_period_end.*"))
+
+    # 6. Общий calendar_callback (последним — на случай других сценариев)
+    app.add_handler(CallbackQueryHandler(calendar_callback, pattern=r"^calendar.*"))
+
+    # 7. CallbackQueryHandler для остальных callback (обычные кнопки)
     app.add_handler(CallbackQueryHandler(callback_router, pattern=r"^(start_btn|main_menu|pay_menu|pay_invoice|trial_activate|account_menu|api_remove|reports_menu|remains_menu|report:remains:.*|ads_menu|report:ads:.*|storage_menu|report:storage:.*|profit_menu|report:profit:.*)$"))
 
     print("Бот запущен!")

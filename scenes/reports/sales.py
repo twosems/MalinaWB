@@ -1,304 +1,263 @@
-import asyncio
-from telegram import InlineKeyboardMarkup, InlineKeyboardButton, Update
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes
 from user_storage import get_api
-from wb_api import (
-    get_sales,
-    get_finance_report_data,
-    get_stocks,
-)
-from utils import paginate, paginated_keyboard, page_info_str, safe_edit_message_text
+from wb_api import get_sales, get_stocks
+from utils import paginate, page_info_str, paginated_keyboard
+from scenes.calendar import calendar_menu, calendar_callback
+from datetime import datetime
 
 REPORT_KEY = "sales"
 PAGE_SIZE = 10
 
-# --- Кнопки для главного меню отчёта продаж ---
-def sales_main_keyboard():
-    buttons = [
-        [InlineKeyboardButton("📦 Отчёт по всем товарам", callback_data="sales_all")],
-        [InlineKeyboardButton("🔢 Отчёт по артикулам", callback_data="sales_articles")],
-        [InlineKeyboardButton("⬅️ Назад", callback_data="reports_menu")]
-    ]
-    return InlineKeyboardMarkup(buttons)
-
-# --- Кнопки выбора типа артикулов ---
-def sales_articles_keyboard():
-    buttons = [
-        [InlineKeyboardButton("Артикулы с положительным остатком", callback_data="sales_articles_positive")],
-        [InlineKeyboardButton("Все артикулы", callback_data="sales_articles_all")],
-        [InlineKeyboardButton("⬅️ Назад", callback_data="sales_main")]
-    ]
-    return InlineKeyboardMarkup(buttons)
-
-# --- Кнопки выбора периода для отчёта всех товаров ---
-def sales_period_keyboard():
-    buttons = [
-        [InlineKeyboardButton("По календарному месяцу", callback_data="sales_period_month")],
-        [InlineKeyboardButton("По конкретному дню", callback_data="sales_period_day")],
-        [InlineKeyboardButton("За произвольный период", callback_data="sales_period_custom")],
-        [InlineKeyboardButton("⬅️ Назад", callback_data="sales_main")]
-    ]
-    return InlineKeyboardMarkup(buttons)
-
-# --- Кнопки навигации и назад для списка артикулов ---
-def sales_articles_list_keyboard(page, total_pages):
-    buttons = []
-    # Навигация по страницам
-    nav_buttons = []
-    if page > 0:
-        nav_buttons.append(InlineKeyboardButton("⬅️ Назад", callback_data=f"sales_articles_page:{page-1}"))
-    if page + 1 < total_pages:
-        nav_buttons.append(InlineKeyboardButton("Вперёд ➡️", callback_data=f"sales_articles_page:{page+1}"))
-    if nav_buttons:
-        buttons.append(nav_buttons)
-    # Кнопка назад
-    buttons.append([InlineKeyboardButton("⬅️ Назад", callback_data="sales_articles")])
-    return InlineKeyboardMarkup(buttons)
-
-# --- Основная функция обработки callback для sales ---
+# Точка входа — один callback для всех sales_*
 async def sales_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    data = query.data
-    user_id = query.from_user.id
-    api_key = get_api(user_id)
+    data = update.callback_query.data
 
-    if not api_key:
-        await query.answer("❗ Для просмотра отчётов нужен API-ключ.")
-        return
-
-    # Главный раздел отчёта продаж
-    if data == "sales_main" or data == "sales_menu":
-        await query.edit_message_text(
-            "📊 <b>Отчёт по продажам</b>\nВыберите тип отчёта:",
-            reply_markup=sales_main_keyboard(),
+    # 1. Главное меню
+    if data == "sales_menu":
+        kb = [
+            [InlineKeyboardButton("🛒 Отчёт по всем товарам", callback_data="sales_all_menu")],
+            [InlineKeyboardButton("🔍 Отчёт по артикулам", callback_data="sales_articles_menu")],
+            [InlineKeyboardButton("⬅️ Назад", callback_data="reports_menu")]
+        ]
+        await update.callback_query.edit_message_text(
+            "<b>Отчёт по продажам</b>\nВыберите раздел:",
+            reply_markup=InlineKeyboardMarkup(kb),
             parse_mode="HTML"
         )
-        await query.answer()
         return
 
-    # Отчёт по всем товарам — меню выбора периода
-    if data == "sales_all":
-        await query.edit_message_text(
+    # 2. Меню выбора периода для всех товаров
+    if data == "sales_all_menu":
+        kb = [
+            [InlineKeyboardButton("📅 За месяц", callback_data="sales_all_month")],
+            [InlineKeyboardButton("📆 За день", callback_data="sales_all_day")],
+            [InlineKeyboardButton("🗓 За период", callback_data="sales_all_period_calendar")],
+            [InlineKeyboardButton("⬅️ Назад", callback_data="sales_menu")]
+        ]
+        await update.callback_query.edit_message_text(
             "Выберите период для отчёта по всем товарам:",
-            reply_markup=sales_period_keyboard(),
+            reply_markup=InlineKeyboardMarkup(kb),
             parse_mode="HTML"
         )
-        await query.answer()
         return
 
-    # Отчёт по артикулам — меню выбора типа артикула
-    if data == "sales_articles":
-        await query.edit_message_text(
-            "Выберите тип артикулов для отчёта:",
-            reply_markup=sales_articles_keyboard(),
+    # 3. Выбор периода — Календарь для дня
+    if data == "sales_all_day":
+        await calendar_menu(update, context, action_prefix="calendar_sales_day", title="Выберите дату:")
+        return
+
+    # 4. Выбор периода — Календарь для произвольного интервала
+    if data == "sales_all_period_calendar":
+        await calendar_menu(update, context, action_prefix="calendar_sales_period_start", title="Выберите начальную дату периода:")
+        return
+
+    # 5. За месяц (автоматически за текущий)
+    if data == "sales_all_month":
+        date_from = datetime.now().replace(day=1).strftime("%Y-%m-%d")
+        await show_sales_all(update, context, date_from)
+        return
+
+    # 6. Артикулы меню
+    if data == "sales_articles_menu":
+        kb = [
+            [InlineKeyboardButton("🟢 Артикулы с остатком", callback_data="sales_articles_with_stock:0")],
+            [InlineKeyboardButton("📋 Все артикулы", callback_data="sales_articles_all:0")],
+            [InlineKeyboardButton("⬅️ Назад", callback_data="sales_menu")]
+        ]
+        await update.callback_query.edit_message_text(
+            "Выберите тип артикула:",
+            reply_markup=InlineKeyboardMarkup(kb),
             parse_mode="HTML"
         )
-        await query.answer()
         return
 
-    # Выбор конкретного типа артикула
-    if data == "sales_articles_positive":
-        # Получаем только артикулы с положительным остатком
-        items = await get_sales_articles(api_key, positive_only=True)
-        await show_articles_list(query, items, 0)
+    # 7. Артикулы с остатком (страницы)
+    if data.startswith("sales_articles_with_stock"):
+        page = int(data.split(":")[1]) if ":" in data else 0
+        await show_articles_with_stock(update, context, page)
         return
 
-    if data == "sales_articles_all":
-        # Получаем все артикулы
-        items = await get_sales_articles(api_key, positive_only=False)
-        await show_articles_list(query, items, 0)
+    # 8. Все артикулы (страницы)
+    if data.startswith("sales_articles_all"):
+        page = int(data.split(":")[1]) if ":" in data else 0
+        await show_articles_all(update, context, page)
         return
 
-    # Навигация по списку артикулов
+    # 9. Переход к выбору периода для конкретного артикула
+    if data.startswith("sales_article_period:"):
+        art = data.split(":", 1)[1]
+        kb = [
+            [InlineKeyboardButton("📅 За месяц", callback_data=f"sales_article:{art}:month")],
+            [InlineKeyboardButton("📆 За день", callback_data=f"sales_article:{art}:day")],
+            [InlineKeyboardButton("🗓 За период", callback_data=f"sales_article_period_calendar:{art}")],
+            [InlineKeyboardButton("⬅️ Назад", callback_data="sales_articles_menu")]
+        ]
+        await update.callback_query.edit_message_text(
+            f"<b>Артикул:</b> <code>{art}</code>\nВыберите период:",
+            reply_markup=InlineKeyboardMarkup(kb),
+            parse_mode="HTML"
+        )
+        return
+
+    # 10. Календарь для артикула за день
+    if data.startswith("sales_article:") and data.endswith(":day"):
+        art = data.split(":")[1]
+        await calendar_menu(update, context, action_prefix=f"calendar_article_day_{art}", title="Выберите дату для артикула:")
+        return
+
+    # 11. Календарь для артикула за период
+    if data.startswith("sales_article_period_calendar:"):
+        art = data.split(":")[1]
+        await calendar_menu(update, context, action_prefix=f"calendar_article_period_start_{art}", title="Выберите начальную дату периода:")
+        return
+
+    # 12. За месяц по артикулу
+    if data.startswith("sales_article:") and data.endswith(":month"):
+        art = data.split(":")[1]
+        date_from = datetime.now().replace(day=1).strftime("%Y-%m-%d")
+        await show_sales_article(update, context, art, date_from)
+        return
+
+    # 13. Callback от пагинации (для всех товаров)
+    if data.startswith("report:sales:"):
+        try:
+            page = int(data.split(":")[-1])
+        except Exception:
+            page = 0
+        date_from = context.user_data.get("sales_date_from", datetime.now().replace(day=1).strftime("%Y-%m-%d"))
+        await show_sales_all(update, context, date_from, page)
+        return
+
+    # 14. Callback от пагинации (для артикулов)
     if data.startswith("sales_articles_page:"):
-        page = int(data.split(":")[1])
-        # Сохраним в context.user_data список артикулов, либо загрузим заново
-        items = context.user_data.get("sales_articles_items")
-        if not items:
-            # На всякий случай
-            items = await get_sales_articles(api_key, positive_only=False)
-            context.user_data["sales_articles_items"] = items
-        await show_articles_list(query, items, page)
+        _, page = data.split(":")
+        await show_articles_all(update, context, int(page))
         return
 
-    # При выборе артикула — переходим к выбору даты для него
-    if data.startswith("sales_article_select:"):
-        article = data.split(":",1)[1]
-        context.user_data["selected_article"] = article
-        await show_date_selection(query, article)
+    await update.callback_query.answer("Пункт в разработке")
+
+# ---- Helpers ----
+
+async def show_sales_all(update, context, date_from, page=0):
+    user_id = update.effective_user.id
+    api_key = get_api(user_id)
+    if not api_key:
+        await update.callback_query.edit_message_text(
+            "❗ Для просмотра отчёта необходимо ввести API-ключ.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔑 Ввести API", callback_data="api_entry")]]),
+            parse_mode="HTML"
+        )
         return
+    await update.callback_query.edit_message_text("⏳ Формируется отчёт...", parse_mode="HTML")
+    sales = await get_sales(api_key, date_from)
+    stats = {}
+    for item in sales:
+        art = item.get("supplierArticle", "—")
+        stats.setdefault(art, 0)
+        stats[art] += 1
+    arts = sorted(stats.items(), key=lambda x: -x[1])
+    page_items, total_pages, page = paginate(arts, page, PAGE_SIZE)
+    text = f"<b>Продажи</b>\n\n"
+    for art, qty in page_items:
+        text += f"• <b>{art}</b>: {qty} шт\n"
+    text += f"\n{page_info_str(page, total_pages)}"
+    await update.effective_chat.send_message(
+        text,
+        reply_markup=paginated_keyboard(REPORT_KEY, page, total_pages),
+        parse_mode="HTML"
+    )
 
-    # Выбор периода для отчёта всех товаров (тут нужно доработать под твои реалии)
-    if data.startswith("sales_period_"):
-        period = data.split("_", 1)[1]
-        # Запускаем генерацию отчёта по выбранному периоду
-        await generate_sales_report_all(query, api_key, period)
-        return
-
-    # Выбор даты для отчёта по артикулу
-    if data.startswith("sales_date_select:"):
-        date = data.split(":",1)[1]
-        article = context.user_data.get("selected_article")
-        if not article:
-            await query.answer("Ошибка: артикул не выбран")
-            return
-        # Запускаем генерацию отчёта по артикулу и дате
-        await generate_sales_report_article(query, api_key, article, date)
-        return
-
-    await query.answer("Пункт в разработке")
-
-
-# --- Помощник для показа списка артикулов с пагинацией ---
-async def show_articles_list(query, items, page):
-    PAGE_SIZE_ARTICLES = 10
-    context = query._bot_data or {}  # Получим context.user_data, но зависит от версии PTB
-
-    if items is None or len(items) == 0:
-        await query.edit_message_text("Нет доступных артикулов.")
-        await query.answer()
-        return
-
-    page_items, total_pages, page = paginate(items, page, PAGE_SIZE_ARTICLES)
-    buttons = []
-
-    for art in page_items:
-        buttons.append([InlineKeyboardButton(art, callback_data=f"sales_article_select:{art}")])
-
-    kb = sales_articles_list_keyboard(page, total_pages)
-    # Добавим кнопки выбора артикула
-    kb.inline_keyboard = buttons + kb.inline_keyboard
-
-    text = f"Список артикулов (страница {page+1} из {total_pages}):"
-    await query.edit_message_text(text, reply_markup=kb, parse_mode="HTML")
-    await query.answer()
-
-# --- Пример функции получения артикулов (замени на реальный вызов API и логику) ---
-async def get_sales_articles(api_key, positive_only=False):
-    # Для примера — получаем остатки с API (замени на твой источник)
+async def show_articles_with_stock(update, context, page=0):
+    user_id = update.effective_user.id
+    api_key = get_api(user_id)
     stocks = await get_stocks(api_key)
-    articles = set()
-    for item in stocks:
-        qty = item.get("quantity", 0)
-        art = item.get("supplierArticle", "")
-        if not art:
-            continue
-        if positive_only and qty <= 0:
-            continue
-        articles.add(art)
-    # Отсортируем для удобства
-    return sorted(articles)
-
-# --- Показать меню выбора даты для артикула ---
-async def show_date_selection(query, article):
-    buttons = [
-        [InlineKeyboardButton("По календарному месяцу", callback_data=f"sales_date_select:month")],
-        [InlineKeyboardButton("По конкретному дню", callback_data=f"sales_date_select:day")],
-        [InlineKeyboardButton("За произвольный период", callback_data=f"sales_date_select:custom")],
-        [InlineKeyboardButton("⬅️ Назад", callback_data="sales_articles")]
-    ]
-    text = f"Выберите период для артикула <b>{article}</b>:"
-    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons), parse_mode="HTML")
-    await query.answer()
-
-# --- Генерация отчёта по всем товарам ---
-async def generate_sales_report_all(query, api_key, period):
-    """Сформировать отчёт по продажам за выбранный период."""
-    await safe_edit_message_text(query, "⏳ Получаем данные...")
-
-    from datetime import date, timedelta
-
-    today = date.today()
-    if period.endswith("month"):
-        date_from = today.replace(day=1).isoformat()
-        date_to = today.isoformat()
-    elif period.endswith("day"):
-        date_from = today.isoformat()
-        date_to = today.isoformat()
-    else:
-        date_from = (today - timedelta(days=7)).isoformat()
-        date_to = today.isoformat()
-
-    try:
-        rows = await get_finance_report_data(api_key, date_from, date_to)
-    except Exception:
-        await query.edit_message_text(
-            "❗ Ошибка при получении данных отчёта.", parse_mode="HTML"
-        )
-        return
-
-    if not rows:
-        await query.edit_message_text(
-            "Нет продаж за указанный период.", parse_mode="HTML"
-        )
-        return
-
-    total_qty = sum(r.get("quantity", 0) for r in rows)
-    revenue = sum(
-        r.get("for_pay")
-        or r.get("forPay")
-        or r.get("retail_amount")
-        or r.get("totalPrice")
-        or r.get("ppvz_for_pay")
-        or 0
-        for r in rows
+    arts = sorted(set(i["supplierArticle"] for i in stocks if i.get("quantity", 0) > 0))
+    page_items, total_pages, page = paginate(arts, page, PAGE_SIZE)
+    text = "<b>Артикулы с остатком:</b>\n\n"
+    for art in page_items:
+        text += f"• <b>{art}</b>\n"
+    text += f"\n{page_info_str(page, total_pages)}"
+    kb = []
+    if page > 0:
+        kb.append(InlineKeyboardButton("⬅️ Назад", callback_data=f"sales_articles_with_stock:{page-1}"))
+    if page + 1 < total_pages:
+        kb.append(InlineKeyboardButton("Вперёд ➡️", callback_data=f"sales_articles_with_stock:{page+1}"))
+    nav = [kb] if kb else []
+    for art in page_items:
+        nav.insert(0, [InlineKeyboardButton(f"Артикул: {art}", callback_data=f"sales_article_period:{art}")])
+    nav.append([InlineKeyboardButton("⬅️ Назад", callback_data="sales_articles_menu")])
+    await update.callback_query.edit_message_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(nav),
+        parse_mode="HTML"
     )
 
-    text = (
-        f"📦 <b>Продажи всех товаров</b>\n"
-        f"Период: <b>{date_from}</b> - <b>{date_to}</b>\n"
-        f"Количество: <b>{total_qty}</b> шт\n"
-        f"Сумма: <b>{revenue:.2f}</b> руб."
-    )
-    await query.edit_message_text(text, parse_mode="HTML")
-
-# --- Генерация отчёта по артикулу и дате ---
-async def generate_sales_report_article(query, api_key, article, date):
-    """Сформировать отчёт по конкретному артикулу."""
-    await safe_edit_message_text(query, "⏳ Получаем данные...")
-
-    from datetime import date as dt_date, timedelta
-
-    today = dt_date.today()
-    if date == "month":
-        date_from = today.replace(day=1).isoformat()
-        date_to = today.isoformat()
-    elif date == "day":
-        date_from = today.isoformat()
-        date_to = today.isoformat()
-    else:
-        date_from = (today - timedelta(days=7)).isoformat()
-        date_to = today.isoformat()
-
-    try:
-        rows = await get_finance_report_data(api_key, date_from, date_to, article=article)
-    except Exception:
-        await query.edit_message_text(
-            "❗ Ошибка при получении данных отчёта.", parse_mode="HTML"
-        )
-        return
-
-    if not rows:
-        await query.edit_message_text(
-            "Нет продаж за указанный период.", parse_mode="HTML"
-        )
-        return
-
-    total_qty = sum(r.get("quantity", 0) for r in rows)
-    revenue = sum(
-        r.get("for_pay")
-        or r.get("forPay")
-        or r.get("retail_amount")
-        or r.get("totalPrice")
-        or r.get("ppvz_for_pay")
-        or 0
-        for r in rows
+async def show_articles_all(update, context, page=0):
+    user_id = update.effective_user.id
+    api_key = get_api(user_id)
+    stocks = await get_stocks(api_key)
+    arts = sorted(set(i["supplierArticle"] for i in stocks))
+    page_items, total_pages, page = paginate(arts, page, PAGE_SIZE)
+    text = "<b>Все артикулы:</b>\n\n"
+    for art in page_items:
+        text += f"• <b>{art}</b>\n"
+    text += f"\n{page_info_str(page, total_pages)}"
+    kb = []
+    if page > 0:
+        kb.append(InlineKeyboardButton("⬅️ Назад", callback_data=f"sales_articles_all:{page-1}"))
+    if page + 1 < total_pages:
+        kb.append(InlineKeyboardButton("Вперёд ➡️", callback_data=f"sales_articles_all:{page+1}"))
+    nav = [kb] if kb else []
+    for art in page_items:
+        nav.insert(0, [InlineKeyboardButton(f"Артикул: {art}", callback_data=f"sales_article_period:{art}")])
+    nav.append([InlineKeyboardButton("⬅️ Назад", callback_data="sales_articles_menu")])
+    await update.callback_query.edit_message_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(nav),
+        parse_mode="HTML"
     )
 
-    text = (
-        f"🔢 <b>Продажи артикула {article}</b>\n"
-        f"Период: <b>{date_from}</b> - <b>{date_to}</b>\n"
-        f"Количество: <b>{total_qty}</b> шт\n"
-        f"Сумма: <b>{revenue:.2f}</b> руб."
+async def show_sales_article(update, context, art, date_from, page=0):
+    user_id = update.effective_user.id
+    api_key = get_api(user_id)
+    sales = await get_sales(api_key, date_from)
+    filtered = [item for item in sales if item.get("supplierArticle") == art]
+    stats = {}
+    for item in filtered:
+        wh = item.get("warehouseName", "—")
+        stats.setdefault(wh, 0)
+        stats[wh] += 1
+    text = f"<b>Продажи по артикулу <code>{art}</code></b>\n\n"
+    for wh, qty in stats.items():
+        text += f"• <b>{wh}</b>: {qty} шт\n"
+    text += "\n⬅️ <b>Назад</b>: к выбору периода"
+    kb = [[InlineKeyboardButton("⬅️ Назад", callback_data=f"sales_article_period:{art}")]]
+    await update.effective_chat.send_message(
+        text,
+        reply_markup=InlineKeyboardMarkup(kb),
+        parse_mode="HTML"
     )
-    await query.edit_message_text(text, parse_mode="HTML")
+
+# ---- Calendar Callbacks (регистрировать в bot.py) ----
+
+async def calendar_sales_day_callback(update, context):
+    async def on_date_selected(update, context, selected_date):
+        date_from = selected_date.strftime("%Y-%m-%d")
+        context.user_data["sales_date_from"] = date_from
+        await show_sales_all(update, context, date_from)
+    await calendar_callback(update, context, action_prefix="calendar_sales_day", on_date_selected=on_date_selected)
+
+async def calendar_sales_period_start_callback(update, context):
+    async def on_date_selected(update, context, selected_date):
+        context.user_data["period_start"] = selected_date.strftime("%Y-%m-%d")
+        await calendar_menu(update, context, action_prefix="calendar_sales_period_end", title="Выберите конечную дату периода:")
+    await calendar_callback(update, context, action_prefix="calendar_sales_period_start", on_date_selected=on_date_selected)
+
+async def calendar_sales_period_end_callback(update, context):
+    async def on_date_selected(update, context, selected_date):
+        start = context.user_data.get("period_start")
+        end = selected_date.strftime("%Y-%m-%d")
+        # Можно реализовать отчёт по периоду
+        await show_sales_all(update, context, start)  # Используй период start-end
+    await calendar_callback(update, context, action_prefix="calendar_sales_period_end", on_date_selected=on_date_selected)
