@@ -6,7 +6,7 @@ def reports_keyboard():
         [InlineKeyboardButton("📦 Остатки товара", callback_data="remains_menu")],
         [InlineKeyboardButton("💸 Отчёт по продажам", callback_data="sales_menu")],
         [InlineKeyboardButton("📣 Отчёт по рекламе", callback_data="ads_menu")],
-        [InlineKeyboardButton("📦 Отчёт по хранению", callback_data="storage_menu")],
+        [InlineKeyboardButton("💼 Отчёт о хранении", callback_data="storage_entry")],
         [InlineKeyboardButton("💰 Отчёт по прибыли", callback_data="profit_menu")],
         [InlineKeyboardButton("⬅️ Назад", callback_data="account_menu")]
     ])

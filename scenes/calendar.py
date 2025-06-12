@@ -5,14 +5,27 @@ import calendar
 
 CALENDAR_KEY = "calendar"  # для паттернов
 
-def build_calendar(year=None, month=None, action_prefix=CALENDAR_KEY):
+RU_MONTHS = [
+    "", "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+    "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"
+]
+
+def build_calendar(year=None, month=None, action_prefix=CALENDAR_KEY, selected_start=None, selected_end=None):
     now = datetime.now()
     year = year or now.year
     month = month or now.month
 
+    # Заголовок с выбранным периодом/датой
+    if selected_start and selected_end:
+        period_str = f"{selected_start.strftime('%d.%m.%Y')} — {selected_end.strftime('%d.%m.%Y')}"
+        title = f"{RU_MONTHS[month]} {year} ({period_str})"
+    elif selected_start:
+        title = f"{RU_MONTHS[month]} {year} (с {selected_start.strftime('%d.%m.%Y')})"
+    else:
+        title = f"{RU_MONTHS[month]} {year}"
+
     markup = []
-    # Шапка
-    markup.append([InlineKeyboardButton(f"{calendar.month_name[month]} {year}", callback_data=f"{action_prefix}:IGNORE")])
+    markup.append([InlineKeyboardButton(title, callback_data=f"{action_prefix}:IGNORE")])
     week_days = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
     markup.append([InlineKeyboardButton(day, callback_data=f"{action_prefix}:IGNORE") for day in week_days])
 
@@ -37,9 +50,21 @@ def build_calendar(year=None, month=None, action_prefix=CALENDAR_KEY):
     ])
     return InlineKeyboardMarkup(markup)
 
-# --- Основная точка входа для отображения календаря ---
-async def calendar_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, action_prefix=CALENDAR_KEY, title="Выберите дату:"):
-    kb = build_calendar(action_prefix=action_prefix)
+# --- Точка входа: показать календарь ---
+async def calendar_menu(
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        action_prefix=CALENDAR_KEY,
+        title="Выберите дату:",
+        select_range=False,        # True — диапазон, False — одна дата
+        selected_start=None,
+        selected_end=None
+):
+    kb = build_calendar(
+        action_prefix=action_prefix,
+        selected_start=selected_start,
+        selected_end=selected_end
+    )
     if update.callback_query:
         await update.callback_query.edit_message_text(
             title, reply_markup=kb
@@ -49,8 +74,18 @@ async def calendar_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, acti
             title, reply_markup=kb
         )
 
-# --- Callback-обработчик для календаря ---
-async def calendar_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, action_prefix=CALENDAR_KEY, on_date_selected=None):
+# --- Callback-обработчик календаря ---
+async def calendar_callback(
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        action_prefix=CALENDAR_KEY,
+        on_date_selected=None,      # для одиночной даты
+        on_range_selected=None,     # для диапазона
+        select_range=False,         # True — диапазон, False — одна дата
+        selected_start=None,
+        selected_end=None,
+        max_days=8                  # максимум дней в диапазоне!
+):
     query = update.callback_query
     data = query.data
     parts = data.split(":")
@@ -69,34 +104,66 @@ async def calendar_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         return
 
     elif action == "DAY":
-        # parts: ["calendar", "DAY", "2024", "6", "13"]
         year, month, day = map(int, parts[2:5])
-        selected_date = datetime(year, month, day)
-        if on_date_selected:
-            await on_date_selected(update, context, selected_date)
+        chosen_date = datetime(year, month, day)
+        if not select_range:
+            # Одиночная дата
+            if on_date_selected:
+                await on_date_selected(update, context, chosen_date)
+            else:
+                await query.edit_message_text(f"Вы выбрали дату: {chosen_date.strftime('%d.%m.%Y')}")
+            return
+        # --- Диапазон ---
+        range_key = f"{action_prefix}_range"
+        range_state = context.user_data.get(range_key, {})
+        if not range_state.get("start"):
+            # Первый клик — старт диапазона
+            context.user_data[range_key] = {"start": chosen_date}
+            await calendar_menu(
+                update, context,
+                action_prefix=action_prefix,
+                title="Выберите конечную дату:",
+                select_range=True,
+                selected_start=chosen_date,
+                selected_end=None
+            )
+            return
         else:
-            await query.edit_message_text(f"Вы выбрали дату: {selected_date.strftime('%d.%m.%Y')}")
-        return
+            start = range_state["start"]
+            end = chosen_date
+            if end < start:
+                start, end = end, start
+            if (end - start).days > (max_days - 1):
+                await query.answer(f"Период не должен превышать {max_days} дней!", show_alert=True)
+                await calendar_menu(
+                    update, context,
+                    action_prefix=action_prefix,
+                    title=f"Выбран старт: {start.strftime('%d.%m.%Y')}. Выберите конечную дату (не более {max_days} дней):",
+                    select_range=True,
+                    selected_start=start,
+                    selected_end=None
+                )
+                return
+            context.user_data[range_key] = {}
+            if on_range_selected:
+                await on_range_selected(update, context, start, end)
+            else:
+                await query.edit_message_text(f"Вы выбрали период: {start.strftime('%d.%m.%Y')} — {end.strftime('%d.%m.%Y')}")
+            return
 
     elif action == "PREV" or action == "NEXT":
         year, month = map(int, parts[2:4])
-        kb = build_calendar(year=year, month=month, action_prefix=action_prefix)
+        range_key = f"{action_prefix}_range"
+        range_state = context.user_data.get(range_key, {})
+        selected_start = range_state.get("start")
+        kb = build_calendar(
+            year=year, month=month,
+            action_prefix=action_prefix,
+            selected_start=selected_start,
+            selected_end=None
+        )
         await query.edit_message_reply_markup(reply_markup=kb)
         await query.answer()
         return
 
     await query.answer()
-
-# --- Пример использования календаря в любом отчёте ---
-# scenes/reports/some_report.py
-
-# from scenes.calendar import calendar_menu, calendar_callback
-
-# async def some_report_menu(update, context):
-#     await calendar_menu(update, context, action_prefix="calendar_some_report", title="Выберите дату для отчёта:")
-
-# async def calendar_some_report_callback(update, context):
-#     async def on_date_selected(update, context, selected_date):
-#         # Тут логика — формируешь отчёт по выбранной дате
-#         await update.callback_query.edit_message_text(f"Готовим отчёт за {selected_date.strftime('%d.%m.%Y')}")
-#     await calendar_callback(update, context, action_prefix="calendar_some_report", on_date_selected=on_date_selected)
